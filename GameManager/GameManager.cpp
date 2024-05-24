@@ -9,6 +9,8 @@
 #include <execution>
 #define _USE_MATH_DEFINES
 #include <math.h>
+
+
 void gameManager::Init(RenderWindow& window) {
 	grass.load(window, "assets/grass.png");
 	// init 480 by 720 windowBuffer
@@ -56,7 +58,7 @@ void gameManager::gameLogic(int x, int y, moveDirection prev, moveDirection curr
 	//int shortestSide = std::min(winSizeX, winSizeY);
 
 }
-const uint32_t GetRand(uint32_t upperBound) {
+static const uint32_t GetRand(uint32_t upperBound) {
 	static unsigned long long PPTRNG = 0;
 
 	PPTRNG = PPTRNG * 0x5d588b65 + 0x269ec3;
@@ -294,57 +296,14 @@ void gameManager::render(RenderWindow& window) {
 	//renderBuffer.reserve(winSizeX * winSizeY);
 
 
-
-
-	//Uint8 r{1}, g{1}, b{1}, a = 255;
-	/*
-	auto work = [](const gameManager* that, SDL_Surface* SWindow, int windowDivided, int whichPart) {
-
-		for (int j = 0, vj = SWindow->h - 1; j < SWindow->h; j++, --vj) {
-			for (int i = (SWindow->w / windowDivided) * whichPart; i < (SWindow->w / windowDivided) * (whichPart + 1); i++) {
-
-				vec2 coord = vec2((float)i / that->winSizeX, (float)j / that->winSizeY);
-				coord = coord * 2.0f - 1.0f; // convert to range [-1, 1]
-
-				// window stretching
-				float aspectRatio = (float)that->winSizeX / (float)that->winSizeY;
-				coord.x *= aspectRatio;
-
-				ShakColor* target_pixel = (ShakColor*)((Uint8*)SWindow->pixels
-					+ vj * SWindow->pitch
-					+ i * SWindow->format->BytesPerPixel);
-
-				(*target_pixel) = that->RenderPixel(coord);
-			}
-		}
-	};
-	*/
-
-
-	// the window is divided up into 4 parts
-	// each part is rendered in a separate thread
-	/*
-	const int windowDivided = window.numCoreCount / 4;
-	{
-		std::vector<std::jthread*> threads;
-		threads.resize(windowDivided);
-
-		for (int i = 0; i < windowDivided; i++) {
-			threads[i] = new std::jthread(work, this, SWindow, windowDivided, i);
-		}
-
-		for (int i = 0; i < windowDivided; i++) {
-			threads[i]->join();
-			delete threads[i];
-		}
-	}*/
-
+#ifdef CPU
 	if (prevSizeX != winSizeX) {
 		horizontal_iterator.resize(winSizeX);
 
 		for (uint32_t i = 0; i < winSizeX; i++)
 			horizontal_iterator[i] = i;
 	}
+
 	if (prevSizeY != winSizeY)
 	{
 		vertical_iter.resize(winSizeY);
@@ -352,27 +311,86 @@ void gameManager::render(RenderWindow& window) {
 		for (uint32_t i = 0; i < winSizeY; i++)
 			vertical_iter[i] = i;
 	}
+	
+	std::for_each(std::execution::par, vertical_iter.begin(), vertical_iter.end(),
+	[this, SWindow](int y) {
+		std::for_each(std::execution::par, horizontal_iterator.begin(), horizontal_iterator.end(),
+		[this, SWindow, y](int x) {
+			vec2 coord = vec2((float)x / this->winSizeX, (float)y / this->winSizeY);
+			coord = coord * 2.0f - 1.0f; // convert to range [-1, 1]
+
+			// window stretching
+			float aspectRatio = (float)this->winSizeX / (float)this->winSizeY;
+			coord.x *= aspectRatio;
+			auto ry = (winSizeY - y) - 1;
+			ShakColor* target_pixel = (ShakColor*)((Uint8*)SWindow->pixels
+				+ ry * SWindow->pitch
+				+ x * SWindow->format->BytesPerPixel);
+
+
+			(*target_pixel) = this->RenderPixel(coord);
+		});
+	});
+#else
+
+	if (prevSizeX != winSizeX) {
+		horizontal_iterator.resize(winSizeX);
+
+		for (uint32_t i = 0; i < winSizeX; i++)
+			horizontal_iterator[i] = i;
+
+		coords.reserve(winSizeX * winSizeY);
+	}
+
+	if (prevSizeY != winSizeY)
+	{
+		vertical_iter.resize(winSizeY);
+
+		for (uint32_t i = 0; i < winSizeY; i++)
+			vertical_iter[i] = i;
+
+		coords.reserve(winSizeX * winSizeY);
+	}
+
 
 	std::for_each(std::execution::par, vertical_iter.begin(), vertical_iter.end(),
 		[this, SWindow](int y) {
 			std::for_each(std::execution::par, horizontal_iterator.begin(), horizontal_iterator.end(),
 			[this, SWindow, y](int x) {
 					vec2 coord = vec2((float)x / this->winSizeX, (float)y / this->winSizeY);
-	coord = coord * 2.0f - 1.0f; // convert to range [-1, 1]
+					coord = coord * 2.0f - 1.0f; // convert to range [-1, 1]
 
-	// window stretching
-	float aspectRatio = (float)this->winSizeX / (float)this->winSizeY;
-	coord.x *= aspectRatio;
-	auto ry = (winSizeY - y) - 1;
-	ShakColor* target_pixel = (ShakColor*)((Uint8*)SWindow->pixels
-		+ ry * SWindow->pitch
-		+ x * SWindow->format->BytesPerPixel);
+					// window stretching
+					float aspectRatio = (float)this->winSizeX / (float)this->winSizeY;
+					coord.x *= aspectRatio;
+
+					coords[y * winSizeX + x] = coord;
+				});
+		});
+	std::vector<ShakColor> colors(coords.size());
+
+	player_info info = { playerX, playerY, playerZ, playerYaw, playerPitch };
+
+	wrapper_thing(world, coords, colors, info);
 
 
-	(*target_pixel) = this->RenderPixel(coord);
+	std::for_each(std::execution::par, vertical_iter.begin(), vertical_iter.end(),
+		[this, SWindow](int y) {
+			std::for_each(std::execution::par, horizontal_iterator.begin(), horizontal_iterator.end(),
+			[this, SWindow, y](int x) {
+
+					auto ry = (winSizeY - y) - 1;
+					ShakColor* target_pixel = (ShakColor*)((Uint8*)SWindow->pixels
+						+ ry * SWindow->pitch
+						+ x * SWindow->format->BytesPerPixel);
+
+
+					(*target_pixel) = this->RenderPixel(coords[y * winSizeX + x]);
 				});
 		});
 
+#endif
+	
 	window.renderSurface(SWindow, NULL, NULL);
 	//window.SetRenderDrawColor(rand() % 255, rand() % 255, rand() % 255, 255);
 

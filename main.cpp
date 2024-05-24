@@ -182,7 +182,7 @@ int main(int argc, char* args[]) {
             alpha = 0;
             last_time = now;
         }
-        //window.display();
+        // window.display();
     }
     window.cleanUp();
     SDL_Quit();

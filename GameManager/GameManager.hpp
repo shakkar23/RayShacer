@@ -14,7 +14,6 @@
 #include "../Texture/TextDict.hpp"
 
 
-
 // this is the gameManager, it redirects the thread to wherever it needs to go
 class gameManager
 {
@@ -24,7 +23,7 @@ public:
 	void render(RenderWindow& window);
 
 private:
-	ShakColor RenderPixel(const vec2 coord)const;
+	ShakColor RenderPixel(const vec2 coord) const;
 
 	int winSizeX{};
 	int winSizeY{};
@@ -37,10 +36,9 @@ private:
 	float playerPitch = 0;
 	
 	World world;
-
 	std::vector<int> horizontal_iterator;
 	std::vector<int> vertical_iter;
-
+	std::vector<vec2> coords;
 	Sprite grass;
 };
 extern gameManager GameManager;
